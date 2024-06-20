@@ -1,2 +1,2 @@
-# k8-HashiCorp-Vault-Enterprise
-Enterprise Vault on Kubernetes 
+# HashiCorp Vault Enterprise on Kubernetes with Integrated Storage & AWS KMS auto-unseal
+
