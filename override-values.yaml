@@ -1,0 +1,115 @@
+global:
+  tlsDisable: false                           #ln21 disables TLS if no TLS certs are configured. Not recommended in production. 
+  openshift: false                            #ln28 
+injector:                                     #deploys 1 agent injector to consume secrets from Vault. Agent Inject is a mutation webhook controller that injects Vault Agent containers into pods meeting specific annotation criteria 
+  enabled: true                               #ln49
+  image:
+    repository: hashicorp/vault-k8s           #ln70 sets the repo and tag of the vault-k8s image to use for the injector.
+    tag: 1.2.1
+  agentImage:
+    repository: hashicorp/vault-enterprise    #ln78. agentImage sets the repo and tag of the Vault image to use for the Vault Agent containers. 
+    tag: 1.14.0-ent                           #ln79. https://hub.docker.com/r/hashicorp/vault-enterprise/tags
+  authPath: "auth/kubernetes"                 #ln139. # Mount Path of the Vault Kubernetes Auth Method.
+server:                                       #Vault server image 
+  enterpriseLicense:
+    secretName: "vault-license"               #ln370. Name of the license secret you already created 
+    secretKey: ""                             #ln372
+  image:
+    repository: hashicorp/vault-enterprise    #ln379
+    tag: 1.14.0-ent                           #ln380. https://hub.docker.com/r/hashicorp/vault-enterprise/tags  
+  readinessProbe:                             #ln508
+    initialDelaySeconds: 15                   #ln518
+    periodSeconds: 15
+                                              #ln673? or 677?
+  auditStorage:
+    enabled: false                            #ln735
+    size: 10Gi
+  dataStorage:                                #ln716. enabling Raft will create persistent volumes for Vault to store data according to this config
+    size: 10Gi                                # Raft can hold 256MiB
+  service:                                    #ln652
+    enabled: true
+    type: ClusterIP                           #ln673. service type for the main Vault service. ClusterIP or NodePort
+  ingress:                                    #ln409.
+    enabled: true
+    activeService: false
+    annotations:                              #ln413.
+      nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+    ingressClassName: "nginx"
+    hosts:
+      - host: "vault.conner.local"
+  route:
+    enabled: false                            #ln450.
+  ha:                                         #ln813.
+    enabled: true
+    replicas: 5
+    apiAddr: "https://$(VAULT_K8S_POD_NAME).vault-internal:8200"
+    raft:
+      enabled: true
+      setNodeId: true                         # set identifier for the node in the Raft cluster
+      config: |                               #ln869. https://developer.hashicorp.com/vault/docs/configuration/storage/raft
+        license_path = "/vault/userconfig/vault-license/license.hclic"
+       
+        listener "tcp" {
+          tls_disable   = false
+          tls_cert_file = "/vault/userconfig/tls/tls.crt"     
+          tls_key_file  = "/vault/userconfig/tls/tls.key"
+          tls_require_and_verify_client_cert = false
+          tls_disable_client_certs           = true
+
+
+          address         = "[::]:8200"
+          cluster_address = "[::]:8201"
+        }
+
+
+        storage "raft" {
+          path = "/vault/data"
+
+
+          retry_join {
+            auto_join             = "provider=k8s namespace=vault label_selector=\"component=server,app.kubernetes.io/name=vault\""
+            auto_join_scheme      = "https"
+            leader_ca_cert_file   = "/vault/userconfig/tls-ca/ca.crt"
+            leader_tls_servername = "HOSTNAME.vault-internal"
+          }
+        }
+
+
+        seal "awskms" {
+        }
+
+
+        service_registration "kubernetes" {}
+
+
+        api_addr     = "https://HOSTNAME.vault-internal:8200"
+        cluster_addr = "https://HOSTNAME.vault-internal:8201"
+        ui           = true
+  extraVolumes:
+    - type: secret
+      name: tls
+    - type: secret
+      name: tls-ca
+    - type: secret
+      name: vault-license
+  extraEnvironmentVars:
+    VAULT_CAPATH: /vault/userconfig/tls-ca/ca.crt
+    VAULT_ADDR: https://$(VAULT_K8S_POD_NAME).vault-internal:8200
+    VAULT_SKIP_VERIFY: false
+    VAULT_SEAL_TYPE: awskms
+  extraSecretEnvironmentVars:
+    - envName: AWS_REGION
+      secretName: aws-kms-info
+      secretKey: AWS_REGION
+    - envName: AWS_ACCESS_KEY_ID
+      secretName: aws-kms-info
+      secretKey: AWS_ACCESS_KEY_ID
+    - envName: AWS_SECRET_ACCESS_KEY
+      secretName: aws-kms-info
+      secretKey: AWS_SECRET_ACCESS_KEY
+    - envName: VAULT_AWSKMS_SEAL_KEY_ID
+      secretName: aws-kms-info
+      secretKey: VAULT_AWSKMS_SEAL_KEY_ID
+ui:
+  enabled: true
+  serviceType: ClusterIP
