@@ -1,2 +1,2 @@
-# HashiCorp Vault Enterprise on Kubernetes with Integrated Storage & AWS KMS auto-unseal
+# HashiCorp Vault Enterprise Kubernetes cluster with Integrated Storage & AWS KMS auto-unseal
 
